@@ -270,7 +270,7 @@ parseTemplate = hole <|> holeOptional <|> content <|> (eof $> Empty)
 
     content =
       Content <$>
-      (fmap fold . some $ escapeSeq <|> try (Text.pack . pure <$> noneOf "\"$")) <*>
+      (fmap fold . some $ escapeSeq <|> try (Text.pack . pure <$> noneOf "$")) <*>
       parseTemplate
 
     escapeSeq = text "\\" *> (text "$" <|> text "\\")

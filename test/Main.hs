@@ -35,6 +35,46 @@ library
   default-language:    Haskell2010
 |]
 
+shellNix =
+  [template|
+{ nixpkgs ? import <nixpkgs> {}, compiler ? "ghc821" }:
+
+let
+
+  inherit (nixpkgs) pkgs;
+
+  haskellPackages = if compiler == "default"
+                       then pkgs.haskellPackages
+                       else pkgs.haskell.packages.\${compiler};
+
+  drv = import ./default.nix { inherit nixpkgs compiler; };
+
+in
+
+  if pkgs.lib.inNixShell then drv.env else drv
+|]
+
+defaultNix =
+  [template|
+{ nixpkgs ? import <nixpkgs> {}, compiler ? "ghc821" }:
+
+let
+
+  inherit (nixpkgs) pkgs;
+
+  f = import ./${package-name}.nix;
+
+  haskellPackages = if compiler == "default"
+                       then pkgs.haskellPackages
+                       else pkgs.haskell.packages.\${compiler};
+
+  drv = haskellPackages.callPackage f {};
+
+in
+
+  drv
+|]
+
 main = do
   runSteps $ do
     name <- prompt "package-name" "Package Name" Nothing Nothing
@@ -60,3 +100,5 @@ main = do
     prompt "author-name" "Author Name" Nothing Nothing
     prompt "author-email" "Author Email" Nothing Nothing
     fillTemplate cabalFile >>= createFile (name <> ".cabal")
+    fillTemplate defaultNix >>= createFile "default.nix"
+    fillTemplate shellNix >>= createFile "shell.nix"
