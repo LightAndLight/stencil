@@ -1,11 +1,12 @@
 {-# language OverloadedStrings #-}
 {-# language OverloadedLists #-}
 {-# language QuasiQuotes #-}
+
 import Stencil
+import Stencil.CmdLine
 
 import Data.Monoid
-import System.Exit
-import Text.Trifecta
+import Options.Applicative
 
 cabalFile =
   [template|
@@ -75,30 +76,63 @@ in
   drv
 |]
 
+steps =
+  prompt "package-name" "Package Name" Nothing Nothing *>
+  prompt "version" "Version" Nothing (Just "0.1.0.0") *>
+  prompt
+    "license"
+    "License"
+    (Just
+      [ "GPL-2"
+      , "GPL-3"
+      , "LGPL-2.1" , "LGPL-3"
+      , "BSD2"
+      , "BSD3"
+      , "MIT"
+      , "ISC"
+      , "MPL-2.0"
+      , "Apache-2.0"
+      , "PublicDomain"
+      , "AllRightsReserved"
+      ])
+    (Just "BSD3") *>
+  prompt "author-name" "Author Name" Nothing Nothing *>
+  prompt "author-email" "Author Email" Nothing Nothing *>
+  fillTemplate [template|${package-name}.cabal|] cabalFile *>
+  fillTemplate [template|default.nix|] defaultNix *>
+  fillTemplate [template|shell.nix|] shellNix
+
+interactiveInfo =
+  info
+    (((,) True <$>
+     strArgument
+     (metavar "STENCIL" <>
+      help "The stencil to run")) <**>
+     helper)
+    fullDesc
+
+nonInteractiveInfo =
+  info
+    (((,) False <$>
+     strArgument
+     (metavar "STENCIL" <>
+      help "The stencil to run")) <**>
+     helper)
+    fullDesc
+
 main = do
-  runSteps $ do
-    name <- prompt "package-name" "Package Name" Nothing Nothing
-    prompt "version" "Version" Nothing (Just "0.1.0.0")
-    prompt
-      "license"
-      "License"
-      (Just
-        [ "GPL-2"
-        , "GPL-3"
-        , "LGPL-2.1"
-        , "LGPL-3"
-        , "BSD2"
-        , "BSD3"
-        , "MIT"
-        , "ISC"
-        , "MPL-2.0"
-        , "Apache-2.0"
-        , "PublicDomain"
-        , "AllRightsReserved"
-        ])
-      (Just "BSD3")
-    prompt "author-name" "Author Name" Nothing Nothing
-    prompt "author-email" "Author Email" Nothing Nothing
-    fillTemplate cabalFile >>= createFile (name <> ".cabal")
-    fillTemplate defaultNix >>= createFile "default.nix"
-    fillTemplate shellNix >>= createFile "shell.nix"
+  let stepsParser = nonInteractive steps
+  (doInteractive, stencilName) <-
+    execParser $
+      info
+        (subparser
+          (command "ni" nonInteractiveInfo <>
+           command "non-interactive" nonInteractiveInfo <>
+           command "i" interactiveInfo <>
+           command "interactive" interactiveInfo)
+          <**>
+          helper)
+        fullDesc
+  if doInteractive
+    then runSteps steps
+    else execParser (nonInteractive steps) >>= runStepsCmdLine steps
