@@ -14,4 +14,4 @@ let
 
 in
 
-  drv
+  pkgs.haskell.lib.dontHaddock drv

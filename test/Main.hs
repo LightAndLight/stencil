@@ -1,3 +1,4 @@
+{-# language GeneralizedNewtypeDeriving #-}
 {-# language OverloadedStrings #-}
 {-# language OverloadedLists #-}
 {-# language QuasiQuotes #-}
@@ -5,8 +6,11 @@
 import Stencil
 import Stencil.CmdLine
 
+import Control.Monad
+import Data.Functor
 import Data.Monoid
 import Options.Applicative
+import System.Environment
 
 cabalFile =
   [template|
@@ -102,37 +106,32 @@ steps =
   fillTemplate [template|default.nix|] defaultNix *>
   fillTemplate [template|shell.nix|] shellNix
 
-interactiveInfo =
+initInfo :: ParserInfo ()
+initInfo =
   info
-    (((,) True <$>
-     strArgument
+    ((strArgument
      (metavar "STENCIL" <>
-      help "The stencil to run")) <**>
-     helper)
-    fullDesc
-
-nonInteractiveInfo =
-  info
-    (((,) False <$>
-     strArgument
-     (metavar "STENCIL" <>
-      help "The stencil to run")) <**>
+      help "The stencil to run") *>
+     flag False True (short 'n' <> help "Run in non-interactive mode") $> ()) <**>
      helper)
     fullDesc
 
 main = do
-  let stepsParser = nonInteractive steps
-  (doInteractive, stencilName) <-
-    execParser $
-      info
+  args <- getArgs
+  case args of
+    "init" : "haskell/nix" : "-n" : rest ->
+      void . handleParseResult $ execParserPure defaultPrefs (nonInteractive steps) rest
+    "init" : "haskell/nix" : _ -> void $ runSteps steps
+    "init" : arg : _ | head arg /= '-' -> error "stencil error: unknown template name"
+    "init" : rest ->
+      void . handleParseResult $ execParserPure defaultPrefs initInfo rest
+    _ ->
+      void . handleParseResult $
+      execParserPure defaultPrefs
+      (info
         (subparser
-          (command "ni" nonInteractiveInfo <>
-           command "non-interactive" nonInteractiveInfo <>
-           command "i" interactiveInfo <>
-           command "interactive" interactiveInfo)
+          (command "init" initInfo)
           <**>
           helper)
-        fullDesc
-  if doInteractive
-    then runSteps steps
-    else execParser (nonInteractive steps) >>= runStepsCmdLine steps
+        fullDesc)
+      args

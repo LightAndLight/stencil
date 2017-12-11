@@ -55,8 +55,12 @@ buildParser (Ap f b) =
           def
 
 runStepCmdLine :: (MonadIO m, MonadReader (Map Text Text) m) => StepsF Text Text a -> m a
-runStepCmdLine (PromptF name pretty choices def) =
-  fromMaybe (error "stencil error: required argument not provided") . Map.lookup name <$> ask
+runStepCmdLine (PromptF name pretty _ _) =
+  let
+    err =
+      error $ "stencil error: required argument '" <> Text.unpack pretty <> "'not provided"
+  in
+    fromMaybe err . Map.lookup name <$> ask
 runStepCmdLine (SetF var content) =
   local (Map.insert var content) $ pure ()
 runStepCmdLine (FillTemplateF path template) = ask >>= runFillTemplate path template

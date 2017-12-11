@@ -3,37 +3,30 @@
 {-# language GADTs #-}
 {-# language OverloadedLists #-}
 {-# language OverloadedStrings #-}
-{-# language TemplateHaskell #-}
 module Stencil where
 
 import Control.Applicative.Free
 import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.Char
 import Data.Foldable
 import Data.Functor
 import Data.IORef
-import Data.List
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Semigroup
 import Data.Text (Text)
-import Instances.TH.Lift
+import Instances.TH.Lift()
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax as TH
 import System.Directory
-import System.Exit
 import Text.Trifecta
-import Text.Parser.Token
 import Text.Parser.Token.Highlight
 
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
-
-import Data.Void
 
 -- Template var content ~ [Either var content]
 data Template var content
@@ -44,8 +37,8 @@ data Template var content
   deriving (Eq, Show, Ord, Lift)
 
 instance Semigroup (Template v c) where
-  Hole a rest <> rest' = Hole a (rest <> rest)
-  Content a rest <> rest' = Content a (rest <> rest)
+  Hole a rest <> rest' = Hole a (rest <> rest')
+  Content a rest <> rest' = Content a (rest <> rest')
   Optional a b rest <> rest' = Optional a b (rest <> rest')
   Empty <> rest' = rest'
 
@@ -63,13 +56,13 @@ normalise (Content a rest) =
     _ -> Content a $ normalise rest
 
 fill :: Ord var => Map var content -> Template var content -> Template var content
-fill env Empty = Empty
+fill _ Empty = Empty
 fill env (Hole var rest)
   | Just content <- Map.lookup var env = Content content $ fill env rest
   | otherwise = Hole var $ fill env rest
 fill env (Content c rest) = Content c $ fill env rest
 fill env (Optional var c rest)
-  | Just content <- Map.lookup var env = Content c $ fill env rest
+  | Just content <- Map.lookup var env = Content content $ fill env rest
   | otherwise = Optional var c $ fill env rest
 
 consolidate :: Semigroup content => Template var content -> Maybe content
@@ -80,34 +73,49 @@ consolidate t =
     _ -> Nothing
 
 data StepsF var content a where
-  PromptF -- ^ Prompt for input
+  -- | Prompt for input
+  PromptF
     :: var -- ^ Variable name
     -> Text -- ^ Pretty name
     -> Maybe (NonEmpty content) -- ^ Choices
     -> Maybe content -- ^ Default
     -> StepsF var content content
-  SetF -- ^ Set a variable to a value
+
+  -- | Set a variable to a value
+  SetF
     :: var -- ^ Variable name
     -> content
     -> StepsF var content ()
-  FillTemplateF -- ^ Instantiate a template and write it to a file
+
+  -- | Instantiate a template and write it to a file
+  FillTemplateF
     :: Template var Text -- ^ Output path
     -> Template var content -- ^ Template to instantiate
     -> StepsF var content content
-  LoadTemplateF -- ^ Load a template from a file
+
+  -- ^ Load a template from a file
+  LoadTemplateF
     :: Text -- ^ Path to template
     -> StepsF var content (Template var content)
-  CreateFileF -- ^ Create a file with some content
+
+  -- ^ Create a file with some content
+  CreateFileF 
     :: Text -- ^ Path to file
     -> Text -- ^ Content
     -> StepsF var content ()
-  MkDirF -- ^ Create a directory
+
+  -- ^ Create a directory
+  MkDirF 
     :: Text -- ^ Path
     -> StepsF var content ()
-  DebugF -- ^ Print a message
+
+  -- ^ Print a message
+  DebugF 
     :: Text -- ^ Message to print
     -> StepsF var content ()
-  DebugVariableF -- ^ Print the value of a variable
+
+  -- ^ Print the value of a variable
+  DebugVariableF 
     :: var -- ^ Variable to inspect
     -> StepsF var content ()
 
@@ -305,7 +313,7 @@ parseTemplate = hole <|> holeOptional <|> content <|> (eof $> Empty)
 template :: QuasiQuoter
 template =
   QuasiQuoter
-  { quoteExp = \input -> do
+  { quoteExp = \input ->
       case parseString parseTemplate mempty input of
         Failure e -> fail $ "error in template: \n" <> show (_errDoc e)
         Success s -> TH.lift s
