@@ -1,6 +1,6 @@
 { mkDerivation, base, containers, directory, free, mtl
 , optparse-applicative, parsers, stdenv, template-haskell, text
-, th-lift-instances, trifecta
+, th-lift-instances, trifecta, turtle
 }:
 mkDerivation {
   pname = "stencil";
@@ -10,7 +10,7 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     base containers directory free mtl optparse-applicative parsers
-    template-haskell text th-lift-instances trifecta
+    template-haskell text th-lift-instances trifecta turtle
   ];
   executableHaskellDepends = [ base optparse-applicative trifecta ];
   description = "Shareable project templates";

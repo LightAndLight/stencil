@@ -11,6 +11,8 @@ import Data.Functor
 import Data.Monoid
 import Options.Applicative
 import System.Environment
+import System.Exit
+import System.IO
 
 cabalFile =
   [template|
@@ -111,17 +113,30 @@ initInfo =
   info
     ((strArgument
      (metavar "STENCIL" <>
-      help "The stencil to run") *>
-     flag False True (short 'n' <> help "Run in non-interactive mode") $> ()) <**>
+      help "The stencil to run") $> ()) <**>
      helper)
     fullDesc
+
+handleParseResult' :: Maybe String -> ParserResult a -> IO a
+handleParseResult' Nothing res = handleParseResult res
+handleParseResult' (Just progName) res =
+  case res of
+    Failure a -> do
+      let (msg, exit) = renderFailure a progName
+      case exit of
+        ExitSuccess -> putStrLn msg
+        _ -> hPutStrLn stderr msg
+      exitWith exit
+    _ -> handleParseResult res
 
 main = do
   args <- getArgs
   case args of
-    "init" : "haskell/nix" : "-n" : rest ->
-      void . handleParseResult $ execParserPure defaultPrefs (nonInteractive steps) rest
-    "init" : "haskell/nix" : _ -> void $ runSteps steps
+    "init" : "haskell/nix" : rest -> do
+      env <-
+        handleParseResult' (Just "haskell/nix") $
+        execParserPure defaultPrefs (nonInteractive steps) rest
+      void $ runStepsCmdLine steps env
     "init" : arg : _ | head arg /= '-' -> error "stencil error: unknown template name"
     "init" : rest ->
       void . handleParseResult $ execParserPure defaultPrefs initInfo rest
