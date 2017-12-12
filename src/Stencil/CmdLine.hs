@@ -69,7 +69,7 @@ runStepCmdLine
 runStepCmdLine step@(PromptF name _ _ _) =
   (Map.lookup name <$> getRIO) >>=
   maybe (runStep step) pure
-runStepCmdLine (SetF var content) =
+runStepCmdLine (SetVarF var content) =
   modifyRIO (Map.insert var content)
 runStepCmdLine (FillTemplateF path template) = getRIO >>= runFillTemplate path template
 runStepCmdLine (LoadTemplateF file) = runLoadTemplate file

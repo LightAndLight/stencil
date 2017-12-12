@@ -120,7 +120,7 @@ data StepsF var content a where
     -> StepsF var content content
 
   -- | Set a variable to a value
-  SetF
+  SetVarF
     :: var -- ^ Variable name
     -> content
     -> StepsF var content ()
@@ -181,8 +181,8 @@ promptDefault a b c = prompt a b Nothing (Just c)
 promptChoice :: var -> Text -> NonEmpty content -> Maybe content -> Steps var content content
 promptChoice a b c = prompt a b (Just c)
 
-set :: var -> content -> Steps var content ()
-set a b = liftAp $ SetF a b
+setVar :: var -> content -> Steps var content ()
+setVar a b = liftAp $ SetVarF a b
 
 script :: AppliedTemplate var content (Shell a) -> Steps var content ()
 script = liftAp . ScriptF
@@ -350,7 +350,7 @@ runStep (CreateFileF file content) = runCreateFile file content
 runStep (MkDirF path) = runMkDir path
 runStep (DebugF t) = runDebug t
 runStep (DebugVariableF name) = getRIO >>= runDebugVariable name
-runStep (SetF name val) = modifyRIO (Map.insert name val) $> ()
+runStep (SetVarF name val) = modifyRIO (Map.insert name val) $> ()
 
 runSteps :: Steps Text Text a -> IO a
 runSteps s = do
