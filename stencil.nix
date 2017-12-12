@@ -12,7 +12,9 @@ mkDerivation {
     base containers directory free mtl optparse-applicative parsers
     template-haskell text th-lift-instances trifecta turtle
   ];
-  executableHaskellDepends = [ base optparse-applicative trifecta ];
+  executableHaskellDepends = [
+    base optparse-applicative text trifecta turtle
+  ];
   description = "Shareable project templates";
   license = stdenv.lib.licenses.bsd3;
 }

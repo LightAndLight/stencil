@@ -1,3 +1,4 @@
+{-# language GADTs #-}
 {-# language GeneralizedNewtypeDeriving #-}
 {-# language OverloadedStrings #-}
 {-# language OverloadedLists #-}
@@ -9,10 +10,14 @@ import Stencil.CmdLine
 import Control.Monad
 import Data.Functor
 import Data.Monoid
+import Data.String
 import Options.Applicative
 import System.Environment
 import System.Exit
 import System.IO
+import Turtle.Prelude hiding (stderr)
+
+import qualified Data.Text as Text
 
 cabalFile =
   [template|
@@ -82,31 +87,35 @@ in
   drv
 |]
 
-steps =
-  prompt "package-name" "Package Name" Nothing Nothing *>
-  prompt "version" "Version" Nothing (Just "0.1.0.0") *>
-  prompt
+coolerCabalInit =
+  promptRequired "package-name" "Package Name" *>
+  promptDefault "version" "Version" "0.1.0.0" *>
+  promptChoice
     "license"
     "License"
-    (Just
-      [ "GPL-2"
-      , "GPL-3"
-      , "LGPL-2.1" , "LGPL-3"
-      , "BSD2"
-      , "BSD3"
-      , "MIT"
-      , "ISC"
-      , "MPL-2.0"
-      , "Apache-2.0"
-      , "PublicDomain"
-      , "AllRightsReserved"
-      ])
+    [ "GPL-2"
+    , "GPL-3"
+    , "LGPL-2.1"
+    , "LGPL-3"
+    , "BSD2"
+    , "BSD3"
+    , "MIT"
+    , "ISC"
+    , "MPL-2.0"
+    , "Apache-2.0"
+    , "PublicDomain"
+    , "AllRightsReserved"
+    ]
     (Just "BSD3") *>
-  prompt "author-name" "Author Name" Nothing Nothing *>
-  prompt "author-email" "Author Email" Nothing Nothing *>
+  promptRequired "author-name" "Author Name" *>
+  promptRequired "author-email" "Author Email" *>
   fillTemplate [template|${package-name}.cabal|] cabalFile *>
   fillTemplate [template|default.nix|] defaultNix *>
-  fillTemplate [template|shell.nix|] shellNix
+  fillTemplate [template|shell.nix|] shellNix *>
+  templatedScript
+    [template|${package-name}.nix|]
+    (inproc "cabal2nix" ["."] mempty)
+    (\val -> output (fromString $ Text.unpack val))
 
 initInfo :: ParserInfo ()
 initInfo =
@@ -135,8 +144,8 @@ main = do
     "init" : "haskell/nix" : rest -> do
       env <-
         handleParseResult' (Just "haskell/nix") $
-        execParserPure defaultPrefs (nonInteractive steps) rest
-      void $ runStepsCmdLine steps env
+        execParserPure defaultPrefs (nonInteractive coolerCabalInit) rest
+      void $ runStepsCmdLine coolerCabalInit env
     "init" : arg : _ | head arg /= '-' -> error "stencil error: unknown template name"
     "init" : rest ->
       void . handleParseResult $ execParserPure defaultPrefs initInfo rest

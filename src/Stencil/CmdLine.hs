@@ -77,6 +77,7 @@ runStepCmdLine (CreateFileF file content) = runCreateFile file content
 runStepCmdLine (MkDirF path) = runMkDir path
 runStepCmdLine (DebugF t) = runDebug t
 runStepCmdLine (DebugVariableF name) = getRIO >>= runDebugVariable name
+runStepCmdLine (ScriptF script) = getRIO >>= runScript script
 
 runStepsCmdLine :: MonadIO m => Steps Text Text a -> Map Text Text -> m a
 runStepsCmdLine steps env =

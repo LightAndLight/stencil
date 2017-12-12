@@ -40,6 +40,8 @@ executable stencil-test
       base >=4.9 && <4.11
     , trifecta >=1.7.1.1 && <1.8
     , optparse-applicative >=0.13.2.0 && <0.14
+    , text >=1.2.2.2 && <1.3
+    , turtle >=1.3.6 && <1.5
     , stencil
   hs-source-dirs:
     test

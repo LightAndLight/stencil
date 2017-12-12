@@ -22,6 +22,7 @@ import Language.Haskell.TH.Syntax as TH
 import System.Directory
 import Text.Trifecta
 import Text.Parser.Token.Highlight
+import Turtle.Shell (Shell, sh)
 
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
@@ -72,6 +73,43 @@ consolidate t =
     Content c Empty -> Just c
     _ -> Nothing
 
+data AppliedTemplate var content b where
+  ApplyTemplate
+    :: (content -> AppliedTemplate var content b)
+    -> Template var content
+    -> AppliedTemplate var content b
+  Apply
+    :: AppliedTemplate var content (a -> b)
+    -> AppliedTemplate var content a
+    -> AppliedTemplate var content b
+  Value :: b -> AppliedTemplate var content b
+
+instance Functor (AppliedTemplate var content) where
+  fmap f (ApplyTemplate a b) = ApplyTemplate (fmap f . a) b
+  fmap f (Apply a b) = Apply (fmap (fmap f) a) b
+  fmap f (Value a) = Value $ f a
+
+fillAppliedTemplate
+  :: (Ord var, Semigroup content)
+  => Map var content
+  -> AppliedTemplate var content a
+  -> AppliedTemplate var content a
+fillAppliedTemplate env (ApplyTemplate f tmp) =
+  case consolidate (fill env tmp) of
+    Nothing -> ApplyTemplate f tmp
+    Just a -> f a
+fillAppliedTemplate env (Apply f a) =
+  Apply (fillAppliedTemplate env f) (fillAppliedTemplate env a)
+fillAppliedTemplate _ (Value b) = Value b
+
+consolidateAppliedTemplate :: Semigroup content => AppliedTemplate var content b -> Maybe b
+consolidateAppliedTemplate (ApplyTemplate f tmp) =
+  consolidate tmp >>= consolidateAppliedTemplate . f
+consolidateAppliedTemplate (Apply f a) =
+  consolidateAppliedTemplate f <*>
+  consolidateAppliedTemplate a
+consolidateAppliedTemplate (Value b) = Just b
+
 data StepsF var content a where
   -- | Prompt for input
   PromptF
@@ -85,6 +123,11 @@ data StepsF var content a where
   SetF
     :: var -- ^ Variable name
     -> content
+    -> StepsF var content ()
+
+  -- | Run a shell script
+  ScriptF
+    :: AppliedTemplate var content (Shell a) -- | The turtle shell to run
     -> StepsF var content ()
 
   -- | Instantiate a template and write it to a file
@@ -129,8 +172,34 @@ prompt
   -> Steps var content content
 prompt a b c d = liftAp $ PromptF a b c d
 
+promptRequired :: var -> Text -> Steps var content content
+promptRequired a b = prompt a b Nothing Nothing
+
+promptDefault :: var -> Text -> content -> Steps var content content
+promptDefault a b c = prompt a b Nothing (Just c)
+
+promptChoice :: var -> Text -> NonEmpty content -> Maybe content -> Steps var content content
+promptChoice a b c = prompt a b (Just c)
+
 set :: var -> content -> Steps var content ()
 set a b = liftAp $ SetF a b
+
+script :: AppliedTemplate var content (Shell a) -> Steps var content ()
+script = liftAp . ScriptF
+
+withTemplate
+  :: Template var content
+  -> (content -> AppliedTemplate var content (Shell a))
+  -> AppliedTemplate var content (Shell a)
+withTemplate tmp f = ApplyTemplate f tmp
+
+templatedScript
+  :: Template var content
+  -> a
+  -> (content -> a -> Shell b)
+  -> Steps var content ()
+templatedScript temp b f =
+  script (withTemplate temp $ \val -> Apply (Value $ f val) (Value b))
 
 fillTemplate :: Template var Text -> Template var content -> Steps var content content
 fillTemplate a b = liftAp $ FillTemplateF a b
@@ -229,6 +298,19 @@ runDebugVariable name vars =
     Nothing -> error $ "stencil error: variable '" <> Text.unpack name <> "' not set"
     Just value -> liftIO (TIO.putStrLn $ "debug variable: " <> value) $> ()
 
+runScript
+  :: MonadIO m
+  => AppliedTemplate Text Text (Shell a)
+  -> Map Text Text
+  -> m ()
+runScript script env = do
+  script' <-
+    maybe
+      (error $ "stencil error: template could not be completely filled: " <> show env)
+      pure
+      (consolidateAppliedTemplate $ fillAppliedTemplate env script)
+  sh script'
+
 runStep
   :: (MonadReader (IORef (Map Text Text)) m, MonadIO m)
   => StepsF Text Text a
@@ -261,6 +343,7 @@ runStep (PromptF name pretty choices def) = do
               | otherwise -> do
                   liftIO $ putStrLn "Invalid selection"
                   loop
+runStep (ScriptF script) = getRIO >>= runScript script
 runStep (FillTemplateF path template) = getRIO >>= runFillTemplate path template
 runStep (LoadTemplateF file) = runLoadTemplate file
 runStep (CreateFileF file content) = runCreateFile file content
