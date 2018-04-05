@@ -27,6 +27,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 
+-- | The results of parsing some command line arguments
 data AppPlan
   = AppPlan
   { interactive :: Bool
@@ -35,6 +36,11 @@ data AppPlan
 
 -- | Build a command line application that can run steps interactively or via command line
 -- arguments
+--
+-- If passed the "-n" flag, then the program will source its variables from command
+-- line arguments. The program can be called with "--help" to see the available options.
+--
+-- If no "-n" flag is present, then the program will run interactively.
 cmdLineApp :: Steps Text Text a -> IO a
 cmdLineApp steps = do
   AppPlan i vs <- execParser (buildParserInfo steps)
@@ -99,6 +105,7 @@ buildParser steps =
               (\def' -> [ "", "Default: " <> Text.unpack def' ])
               def
 
+-- | Run steps non-interactively for some variable state
 runStepCmdLine
   :: ( MonadIO m
      , MonadState (Map Text Text) m
@@ -118,6 +125,7 @@ runStepCmdLine (DebugF t) = runDebug t
 runStepCmdLine (DebugVariableF name) = get >>= runDebugVariable name
 runStepCmdLine (ScriptF script) = get >>= runScript script
 
+-- | Run steps non-interactively given an initial state
 runStepsCmdLine :: MonadIO m => Steps Text Text a -> Map Text Text -> m a
 runStepsCmdLine steps = evalStateT (runAp runStepCmdLine steps)
 

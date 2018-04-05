@@ -4,8 +4,10 @@
 {-# language OverloadedLists #-}
 {-# language OverloadedStrings #-}
 module Stencil
-  ( -- * Steps
-    Steps
+  ( module Turtle.Prelude
+  , module Turtle.Shell
+    -- * Steps
+  , Steps
   , runSteps
   , prompt
   , promptRequired
@@ -53,6 +55,7 @@ import Data.Functor
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Semigroup
+import Data.String
 import Data.Text (Text)
 import Instances.TH.Lift()
 import Language.Haskell.TH.Quote
@@ -60,6 +63,9 @@ import Language.Haskell.TH.Syntax as TH
 import System.Directory
 import Text.Trifecta
 import Turtle.Shell (Shell, sh)
+import Turtle.Prelude (echo)
+import qualified Turtle.Shell
+import qualified Turtle.Prelude
 
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
@@ -67,12 +73,19 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
 
 -- | Documents with holes of type @var@, that can be filled by type @content@
+--
+-- The 'IsString' instance creates a document with no holes in it, i.e.
+--
+-- @'consolidate' ('fromString' str) = 'Just' str@
 data Template var content
   = Hole !var (Template var content)
   | Optional !var !content (Template var content)
   | Content !content (Template var content)
   | Empty
   deriving (Eq, Show, Ord, Lift)
+
+instance IsString content => IsString (Template var content) where
+  fromString str = Content (fromString str) Empty
 
 instance Semigroup (Template v c) where
   Hole a rest <> rest' = Hole a (rest <> rest')
@@ -114,7 +127,7 @@ consolidate t =
     Content c Empty -> Just c
     _ -> Nothing
 
--- 'Template's lifted to functions that act on @content@
+-- | 'Template's lifted to functions that *act* on @content@
 data AppliedTemplate var content b where
   ApplyTemplate
     :: (content -> AppliedTemplate var content b)
@@ -159,53 +172,53 @@ consolidateAppliedTemplate (Value b) = Just b
 data StepsF var content a where
   -- | Prompt for input
   PromptF
-    :: var -- ^ Variable name
-    -> Text -- ^ Pretty name
-    -> Maybe (NonEmpty content) -- ^ Choices
-    -> Maybe content -- ^ Default
+    :: var
+    -> Text
+    -> Maybe (NonEmpty content)
+    -> Maybe content
     -> StepsF var content content
 
   -- | Set a variable to a value
   SetF
-    :: var -- ^ Variable name
+    :: var
     -> content
     -> StepsF var content ()
 
   -- | Run a 'Shell' script
   ScriptF
-    :: AppliedTemplate var content (Shell a) -- ^ The 'Shell' script to run
+    :: AppliedTemplate var content (Shell a)
     -> StepsF var content ()
 
   -- | Instantiate a template and write it to a file
   FillTemplateF
-    :: Template var Text -- ^ Output path
-    -> Template var content -- ^ Template to instantiate
+    :: Template var Text
+    -> Template var content
     -> StepsF var content content
 
   -- | Load a template from a file
   LoadTemplateF
-    :: Text -- ^ Path to template
+    :: Text
     -> StepsF var content (Template var content)
 
   -- | Create a file with some content
   CreateFileF
-    :: Text -- ^ Path to file
-    -> Text -- ^ Content
+    :: Text
+    -> Text
     -> StepsF var content ()
 
   -- | Create a directory
   MkDirF
-    :: Text -- ^ Path
+    :: Text
     -> StepsF var content ()
 
   -- | Print a message
   DebugF
-    :: Text -- ^ Message to print
+    :: Text
     -> StepsF var content ()
 
   -- | Print the value of a variable
   DebugVariableF
-    :: var -- ^ Variable to inspect
+    :: var
     -> StepsF var content ()
 
 type Steps var content = Ap (StepsF var content)
@@ -445,22 +458,24 @@ runSteps s = evalStateT (runAp runStep s) Map.empty
 -- template = template_piece*
 -- template_piece ::= hole | hole_optional | content
 --
--- hole ::= '$' '{' identifier '}'
+-- hole ::= "$" "{" identifier "}"
 --
--- hole_optional ::= '$' '{' identifier '|' stringLiteral '}'
+-- hole_optional ::= "$" "{" identifier "|" stringLiteral "}"
 --
--- content ::= (content_escape_seq | <ascii / {'$', '\\'}> )+
--- content_escape_seq ::= '\' '$' | '\' '\'
+-- content ::= (content_escape_seq | <ascii / {"$", "\\"}> )+
+-- content_escape_seq ::= "\" "$" | "\" "\"
 --
--- identifier ::= (<ascii / {'|', '}', '\'}>)+
+-- identifier ::= (<ascii / {"|", "}", "\"}>)+
 -- @
 parseTemplate :: (TokenParsing m, Monad m) => m (Template Text Text)
-parseTemplate = do
-  text "${"
-  var <- identifier
-  whiteSpace
-  (hole var <|> holeOptional var) <|> content <|> (eof $> Empty)
+parseTemplate = someHole <|> content <|> (eof $> Empty)
   where
+    someHole = do
+      text "${"
+      var <- identifier
+      whiteSpace
+      hole var <|> holeOptional var
+
     hole var =
       Hole var <$>
       (char '}' *> parseTemplate)
@@ -482,6 +497,7 @@ parseTemplate = do
 -- | 'QuasiQuoter' for template syntax.
 --
 -- @['template'|this string contains a ${variable}]@
+--
 -- @['template'|this string contains a ${variable | "with a default value"}]@
 template :: QuasiQuoter
 template =
