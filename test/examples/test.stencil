@@ -1,4 +1,0 @@
-prompt thingo1 "Thingo 1" [ "foo" "bar" "baz" ] 
-prompt optional thingo2 "Thingo 2" [ "bleep" "bloop" ] "bwop"
-set res template("${thingo1} is a ${thingo2}")
-debug variable res
