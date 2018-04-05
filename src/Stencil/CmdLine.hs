@@ -61,7 +61,8 @@ buildParserInfo steps =
 buildParser :: Steps Text Text a -> Parser AppPlan
 buildParser steps =
   AppPlan <$>
-  switch (short 'n' <> help "non-interactive mode") <*>
+  switch
+    (short 'n' <> help "non-interactive mode (other flags only work if this is enabled)") <*>
   buildVariables steps
   where
     buildVariables :: Steps Text Text a -> Parser (Map Text Text)
