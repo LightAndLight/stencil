@@ -13,5 +13,4 @@ let
   drv = haskellPackages.callPackage f {};
 
 in
-
-  pkgs.haskell.lib.dontHaddock drv
+  drv
