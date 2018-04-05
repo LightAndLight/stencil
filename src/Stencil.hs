@@ -29,7 +29,7 @@ import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
 
--- Template var content ~ [Either var content]
+-- | Documents with holes of type @var@, that can be filled by type @content@
 data Template var content
   = Hole !var (Template var content)
   | Optional !var !content (Template var content)
@@ -47,6 +47,7 @@ instance Monoid (Template v c) where
   mempty = Empty
   mappend = (<>)
 
+-- | Append adjacent @content@ in a 'Template'
 normalise :: Semigroup content => Template var content -> Template var content
 normalise Empty = Empty
 normalise (Hole a b) = Hole a $ normalise b
@@ -56,6 +57,7 @@ normalise (Content a rest) =
     Content b c -> normalise $ Content (a <> b) c
     _ -> Content a $ normalise rest
 
+-- | Fill some holes in a 'Template' given a 'Map' from @var@ to @content@
 fill :: Ord var => Map var content -> Template var content -> Template var content
 fill _ Empty = Empty
 fill env (Hole var rest)
@@ -66,6 +68,8 @@ fill env (Optional var c rest)
   | Just content <- Map.lookup var env = Content content $ fill env rest
   | otherwise = Optional var c $ fill env rest
 
+-- | Extract a completed document from a template. If there are unfilled holes,
+-- outputs 'Nothing'.
 consolidate :: Semigroup content => Template var content -> Maybe content
 consolidate t =
   case normalise t of
@@ -73,6 +77,7 @@ consolidate t =
     Content c Empty -> Just c
     _ -> Nothing
 
+-- 'Template's lifted to functions that act on @content@
 data AppliedTemplate var content b where
   ApplyTemplate
     :: (content -> AppliedTemplate var content b)
@@ -89,6 +94,7 @@ instance Functor (AppliedTemplate var content) where
   fmap f (Apply a b) = Apply (fmap (fmap f) a) b
   fmap f (Value a) = Value $ f a
 
+-- | Fill some holes in an 'AppliedTemplate' given a 'Map' from @var@ to @content@
 fillAppliedTemplate
   :: (Ord var, Semigroup content)
   => Map var content
@@ -102,6 +108,8 @@ fillAppliedTemplate env (Apply f a) =
   Apply (fillAppliedTemplate env f) (fillAppliedTemplate env a)
 fillAppliedTemplate _ (Value b) = Value b
 
+-- | Use the 'AppliedTemplate' to construct a value. If there are unfilled holes, outputs
+-- 'Nothing'.
 consolidateAppliedTemplate :: Semigroup content => AppliedTemplate var content b -> Maybe b
 consolidateAppliedTemplate (ApplyTemplate f tmp) =
   consolidate tmp >>= consolidateAppliedTemplate . f
@@ -110,6 +118,7 @@ consolidateAppliedTemplate (Apply f a) =
   consolidateAppliedTemplate a
 consolidateAppliedTemplate (Value b) = Just b
 
+-- | Project templating DSL
 data StepsF var content a where
   -- | Prompt for input
   PromptF
@@ -125,9 +134,9 @@ data StepsF var content a where
     -> content
     -> StepsF var content ()
 
-  -- | Run a shell script
+  -- | Run a 'Shell' script
   ScriptF
-    :: AppliedTemplate var content (Shell a) -- | The turtle shell to run
+    :: AppliedTemplate var content (Shell a) -- ^ The 'Shell' script to run
     -> StepsF var content ()
 
   -- | Instantiate a template and write it to a file
@@ -136,106 +145,135 @@ data StepsF var content a where
     -> Template var content -- ^ Template to instantiate
     -> StepsF var content content
 
-  -- ^ Load a template from a file
+  -- | Load a template from a file
   LoadTemplateF
     :: Text -- ^ Path to template
     -> StepsF var content (Template var content)
 
-  -- ^ Create a file with some content
-  CreateFileF 
+  -- | Create a file with some content
+  CreateFileF
     :: Text -- ^ Path to file
     -> Text -- ^ Content
     -> StepsF var content ()
 
-  -- ^ Create a directory
-  MkDirF 
+  -- | Create a directory
+  MkDirF
     :: Text -- ^ Path
     -> StepsF var content ()
 
-  -- ^ Print a message
-  DebugF 
+  -- | Print a message
+  DebugF
     :: Text -- ^ Message to print
     -> StepsF var content ()
 
-  -- ^ Print the value of a variable
-  DebugVariableF 
+  -- | Print the value of a variable
+  DebugVariableF
     :: var -- ^ Variable to inspect
     -> StepsF var content ()
 
 type Steps var content = Ap (StepsF var content)
 
+-- | Prompt for input
 prompt
-  :: var
-  -> Text
-  -> Maybe (NonEmpty content)
-  -> Maybe content
+  :: var -- ^ Variable name
+  -> Text -- ^ Pretty name
+  -> Maybe (NonEmpty content) -- ^ Choices
+  -> Maybe content -- ^ Default
   -> Steps var content content
 prompt a b c d = liftAp $ PromptF a b c d
 
-promptRequired :: var -> Text -> Steps var content content
+-- | Prompt for required input
+promptRequired
+  :: var -- ^ Variable name
+  -> Text -- ^ Pretty name
+  -> Steps var content content
 promptRequired a b = prompt a b Nothing Nothing
 
-promptDefault :: var -> Text -> content -> Steps var content content
+-- | Prompt for input with a default
+promptDefault
+  :: var -- ^ Variable name
+  -> Text -- ^ Pretty name
+  -> content -- ^ Default
+  -> Steps var content content
 promptDefault a b c = prompt a b Nothing (Just c)
 
-promptChoice :: var -> Text -> NonEmpty content -> Maybe content -> Steps var content content
+-- | Prompt for input with choices
+promptChoice
+  :: var -- ^ Variable name
+  -> Text -- ^ Pretty name
+  -> NonEmpty content -- ^ Choices
+  -> Maybe content -- ^ Default
+  -> Steps var content content
 promptChoice a b c = prompt a b (Just c)
 
+-- | Set a variable to a value
 set :: var -> content -> Steps var content ()
 set a b = liftAp $ SetF a b
 
-script :: AppliedTemplate var content (Shell a) -> Steps var content ()
+-- | Run a 'Shell' script
+script
+  :: AppliedTemplate var content (Shell a) -- ^ The 'Shell' script to run
+  -> Steps var content ()
 script = liftAp . ScriptF
 
-withTemplate
-  :: Template var content
-  -> (content -> AppliedTemplate var content (Shell a))
-  -> AppliedTemplate var content (Shell a)
-withTemplate tmp f = ApplyTemplate f tmp
-
+-- | Helper command to use a 'Template' document as an argument to a script.
+--
+-- For example, if you wanted to run the equivalent of @echo "${my-variable}"@,
+-- you could write:
+--
+-- @
+--   'templatedScript'
+--     ['template'|${my-variable}|]
+--     ()
+--     (\my_variable_value () -> 'liftIO' $ 'echo' ('unsafeTextToLine' my_variable_value))
+-- @
 templatedScript
   :: Template var content
   -> a
   -> (content -> a -> Shell b)
   -> Steps var content ()
 templatedScript temp b f =
-  script (withTemplate temp $ \val -> Apply (Value $ f val) (Value b))
+  script (ApplyTemplate (\val -> Apply (Value $ f val) (Value b)) temp)
 
-fillTemplate :: Template var Text -> Template var content -> Steps var content content
+-- | Instantiate a template and write it to a file
+fillTemplate
+  :: Template var Text -- ^ Output path
+  -> Template var content -- ^ Template to instantiate
+  -> Steps var content content
 fillTemplate a b = liftAp $ FillTemplateF a b
 
-loadTemplate :: Text -> Steps var content (Template var content)
+-- | Load a template from a file
+loadTemplate
+  :: Text -- ^ Path to template
+  -> Steps var content (Template var content)
 loadTemplate a = liftAp $ LoadTemplateF a
 
-createFile :: Text -> Text -> Steps var content ()
+-- | Create a file with some content
+createFile
+  :: Text -- ^ Path to file
+  -> Text -- ^ Content
+  -> Steps var content ()
 createFile a b = liftAp $ CreateFileF a b
 
-mkDir :: Text -> Steps var content ()
+-- | Create a directory
+mkDir
+  :: Text -- ^ Path
+  -> Steps var content ()
 mkDir a = liftAp $ MkDirF a
 
+-- | Print a message
 debug :: Text -> Steps var content ()
 debug a = liftAp $ DebugF a
 
+-- | Print the value of a variable
 debugVariable :: var -> Steps var content ()
 debugVariable a = liftAp $ DebugVariableF a
 
-data Stencil a
-  = Stencil
-  { _stencil_name :: Text
-  , _stencil_steps :: Steps Text Text a
-  }
-
-modifyRIO :: (MonadReader (IORef r) m, MonadIO m) => (r -> r) -> m ()
-modifyRIO f = do
-  env <- ask
-  liftIO $ modifyIORef env f
-
-getRIO :: (MonadReader (IORef r) m, MonadIO m) => m r
-getRIO = do
-  env <- asks readIORef
-  liftIO env
-
-renderChoices :: NonEmpty Text -> Maybe Text -> Text
+-- | Render a list of choices with "cabal-init" style dot points
+renderChoices
+  :: NonEmpty Text -- ^ Choices
+  -> Maybe Text -- ^ Default
+  -> Text
 renderChoices choices def =
   let
     choices' =
@@ -352,38 +390,33 @@ runStep (DebugF t) = runDebug t
 runStep (DebugVariableF name) = getRIO >>= runDebugVariable name
 runStep (SetF name val) = modifyRIO (Map.insert name val) $> ()
 
+-- | Run some steps interactively
 runSteps :: Steps Text Text a -> IO a
 runSteps s = do
-  env <- newIORef Map.empty 
+  env <- newIORef Map.empty
   runReaderT (runAp runStep s) env
 
-identifier :: (TokenParsing m, Monad m) => m Text
-identifier = ident identStyle
-  where
-    identStyle =
-      IdentifierStyle
-      { _styleName = "identifier"
-      , _styleStart = alphaNum
-      , _styleLetter = alphaNum <|> oneOf "_-"
-      , _styleReserved = ["prompt", "optional", "debug", "set", "variable"]
-      , _styleHighlight = Identifier
-      , _styleReservedHighlight = ReservedIdentifier
-      }
-
+-- | Parse template syntax
+--
+-- @
+-- template ::= hole | hole_optional | content | <epsilon>
+--
+-- hole ::= 
+-- @
 parseTemplate :: (TokenParsing m, Monad m) => m (Template Text Text)
-parseTemplate = hole <|> holeOptional <|> content <|> (eof $> Empty)
+parseTemplate = do
+  text "${"
+  ident <- identifier
+  whiteSpace
+  (hole ident <|> holeOptional ident) <|> content <|> (eof $> Empty)
   where
-    hole =
-      Hole <$>
-      try
-        (char '$' *>
-         between (char '{' <* whiteSpace) (whiteSpace *> char '}') identifier) <*>
-      parseTemplate
+    hole ident =
+      Hole ident <$>
+      (char '}' *> parseTemplate)
 
-    holeOptional =
+    holeOptional ident =
       uncurry Optional <$>
-      (char '$' *>
-       braces (liftA2 (,) identifier (symbol "|" *> stringLiteral))) <*>
+      ((,) ident <$> (char '|' *> whiteSpace *> stringLiteral) <* whiteSpace <* char '}') <*>
       parseTemplate
 
     content =
@@ -391,8 +424,18 @@ parseTemplate = hole <|> holeOptional <|> content <|> (eof $> Empty)
       (fmap fold . some $ escapeSeq <|> try (Text.pack . pure <$> noneOf "$")) <*>
       parseTemplate
 
-    escapeSeq = text "\\" *> (text "$" <|> text "\\")
+    escapeSeq = fmap (Text.pack . pure) $ char '\\' *> oneOf "$\\"
 
+    identifier =
+      Text.pack <$>
+      many
+        (noneOf "|}" <|>
+         (char '\\' *> oneOf "|}\\"))
+
+-- | 'QuasiQuoter' for template syntax.
+--
+-- @['template'|this string contains a ${variable}]@
+-- @['template'|this string contains a ${variable | with a default value}]@
 template :: QuasiQuoter
 template =
   QuasiQuoter
@@ -404,3 +447,13 @@ template =
   , quoteType = const (fail "template cannot be used as a type")
   , quoteDec = const (fail "template cannot be used as a declaration")
   }
+
+modifyRIO :: (MonadReader (IORef r) m, MonadIO m) => (r -> r) -> m ()
+modifyRIO f = do
+  env <- ask
+  liftIO $ modifyIORef env f
+
+getRIO :: (MonadReader (IORef r) m, MonadIO m) => m r
+getRIO = do
+  env <- asks readIORef
+  liftIO env
