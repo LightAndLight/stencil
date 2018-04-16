@@ -432,7 +432,7 @@ runStep (PromptF name pretty def) = do
       case def of
         Just content | Text.null val -> content
         _ -> val
-  modify (Map.insert name val) $> res
+  modify (Map.insert name res) $> res
   where
     loop = do
       val <- TIO.getLine
