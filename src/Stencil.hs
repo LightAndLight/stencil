@@ -4,10 +4,8 @@
 {-# language OverloadedLists #-}
 {-# language OverloadedStrings #-}
 module Stencil
-  ( module Turtle.Prelude
-  , module Turtle.Shell
-    -- * Steps
-  , Steps
+  ( -- * Steps
+    Steps
   , runSteps
   , prompt
   , promptRequired
@@ -15,7 +13,6 @@ module Stencil
   , promptChoice
   , set
   , script
-  , templatedScript
   , fillTemplate
   , loadTemplate
   , createFile
@@ -41,9 +38,6 @@ module Stencil
   , consolidate
   , fill
   , parseTemplate
-  , AppliedTemplate(..)
-  , consolidateAppliedTemplate
-  , fillAppliedTemplate
   )
 where
 
@@ -63,12 +57,10 @@ import Instances.TH.Lift()
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax as TH
 import System.Directory
+import System.Exit (ExitCode(..))
+import System.Process (readProcessWithExitCode)
 import Text.Trifecta
 import Text.Read (readMaybe)
-import Turtle.Shell (Shell, sh)
-import Turtle.Prelude (echo)
-import qualified Turtle.Shell
-import qualified Turtle.Prelude
 
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
@@ -138,53 +130,13 @@ consolidate t =
     Content c Empty -> Just c
     _ -> Nothing
 
--- | 'Template's lifted to functions that *act* on @content@
-data AppliedTemplate var content b where
-  ApplyTemplate
-    :: (content -> AppliedTemplate var content b)
-    -> Template var content
-    -> AppliedTemplate var content b
-  Apply
-    :: AppliedTemplate var content (a -> b)
-    -> AppliedTemplate var content a
-    -> AppliedTemplate var content b
-  Value :: b -> AppliedTemplate var content b
-
-instance Functor (AppliedTemplate var content) where
-  fmap f (ApplyTemplate a b) = ApplyTemplate (fmap f . a) b
-  fmap f (Apply a b) = Apply (fmap (fmap f) a) b
-  fmap f (Value a) = Value $ f a
-
--- | Fill some holes in an 'AppliedTemplate' given a 'Map' from @var@ to @content@
-fillAppliedTemplate
-  :: (Ord var, Semigroup content)
-  => Map var content
-  -> AppliedTemplate var content a
-  -> AppliedTemplate var content a
-fillAppliedTemplate env (ApplyTemplate f tmp) =
-  case consolidate (fill env tmp) of
-    Nothing -> ApplyTemplate f tmp
-    Just a -> f a
-fillAppliedTemplate env (Apply f a) =
-  Apply (fillAppliedTemplate env f) (fillAppliedTemplate env a)
-fillAppliedTemplate _ (Value b) = Value b
-
--- | Use the 'AppliedTemplate' to construct a value. If there are unfilled holes, outputs
--- 'Nothing'.
-consolidateAppliedTemplate :: Semigroup content => AppliedTemplate var content b -> Maybe b
-consolidateAppliedTemplate (ApplyTemplate f tmp) =
-  consolidate tmp >>= consolidateAppliedTemplate . f
-consolidateAppliedTemplate (Apply f a) =
-  consolidateAppliedTemplate f <*>
-  consolidateAppliedTemplate a
-consolidateAppliedTemplate (Value b) = Just b
-
 -- | Project templating DSL
 data StepsF var content a where
   -- | Some text
   ConstantF
     :: Text
     -> StepsF var content Text
+
   -- | Prompt for input
   PromptF
     :: var
@@ -208,7 +160,7 @@ data StepsF var content a where
 
   -- | Run a 'Shell' script
   ScriptF
-    :: AppliedTemplate var content (Shell a)
+    :: Template var content
     -> StepsF var content ()
 
   -- | Instantiate a template and write it to a file
@@ -290,28 +242,9 @@ set a b = liftAp $ SetF a b
 
 -- | Run a 'Shell' script
 script
-  :: AppliedTemplate var content (Shell a) -- ^ The 'Shell' script to run
+  :: Template var content -- ^ The (templated) shell script to run
   -> Steps var content ()
 script = liftAp . ScriptF
-
--- | Helper command to use a 'Template' document as an argument to a script.
---
--- For example, if you wanted to run the equivalent of @echo "${my-variable}"@,
--- you could write:
---
--- @
---   'templatedScript'
---     ['template'|${my-variable}|]
---     ()
---     (\my_variable_value () -> 'liftIO' $ 'echo' ('unsafeTextToLine' my_variable_value))
--- @
-templatedScript
-  :: Template var content
-  -> a
-  -> (content -> a -> Shell b)
-  -> Steps var content ()
-templatedScript temp b f =
-  script (ApplyTemplate (\val -> Apply (Value $ f val) (Value b)) temp)
 
 -- | Instantiate a template and write it to a file
 fillTemplate
@@ -432,7 +365,7 @@ runDebugVariable name vars =
 -- | How to run 'ScriptF' interactively
 runScript
   :: MonadIO m
-  => AppliedTemplate Text Text (Shell a)
+  => Template Text Text
   -> Map Text Text
   -> m ()
 runScript scr env = do
@@ -440,8 +373,11 @@ runScript scr env = do
     maybe
       (error $ "stencil error: template could not be completely filled: " <> show env)
       pure
-      (consolidateAppliedTemplate $ fillAppliedTemplate env scr)
-  sh scr'
+      (consolidate $ fill env scr)
+  (res, _, _) <- liftIO $ readProcessWithExitCode "sh" ["-c", Text.unpack scr'] ""
+  case res of
+    ExitSuccess -> pure ()
+    ExitFailure n -> error $ "stencil error: script failed with code " <> show n
 
 -- | Run 'StepF' interactively with some initial state
 runStep
