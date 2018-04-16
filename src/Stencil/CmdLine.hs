@@ -46,7 +46,7 @@ data AppPlan
 cmdLineApp :: Steps Text Text a -> IO a
 cmdLineApp steps = do
   AppPlan i vs <- execParser (buildParserInfo steps)
-  if i
+  if not i
     then runSteps steps
     else runStepsCmdLine steps vs
 
