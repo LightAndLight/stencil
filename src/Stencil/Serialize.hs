@@ -66,7 +66,14 @@ toValue = toJSON . runAp_ go
               ]
             )
           ]
-        ScriptF tmp -> error "serialization for scripts not implemented"
+        ScriptF tmp ->
+          Object
+          [ ( "script"
+            , Object
+              [ ("content", String $ renderTemplate tmp)
+              ]
+            )
+          ]
         FillTemplateF path content ->
           Object
           [ ( "fill_template"
