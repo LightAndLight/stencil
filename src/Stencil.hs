@@ -36,6 +36,7 @@ module Stencil
   , runScript
     -- * Templating Internals
   , Template(..)
+  , renderTemplate
   , normalise
   , consolidate
   , fill
@@ -85,6 +86,14 @@ data Template var content
   | Content !content (Template var content)
   | Empty
   deriving (Eq, Show, Ord, Lift)
+
+-- | Display a template in a human-readable format
+renderTemplate :: Template Text Text -> Text
+renderTemplate (Hole var rest) = "${" <> var <> "}" <> renderTemplate rest
+renderTemplate (Optional var def rest) =
+  "${" <> var <> "|" <> def <> "}" <> renderTemplate rest
+renderTemplate (Content val rest) = val <> renderTemplate rest
+renderTemplate Empty = mempty
 
 instance IsString content => IsString (Template var content) where
   fromString str = Content (fromString str) Empty
@@ -172,6 +181,10 @@ consolidateAppliedTemplate (Value b) = Just b
 
 -- | Project templating DSL
 data StepsF var content a where
+  -- | Some text
+  ConstantF
+    :: Text
+    -> StepsF var content Text
   -- | Prompt for input
   PromptF
     :: var
@@ -231,6 +244,12 @@ data StepsF var content a where
     -> StepsF var content ()
 
 type Steps var content = Ap (StepsF var content)
+
+-- | Some text
+constant
+  :: Text -- ^ Pretty name
+  -> Steps var content Text
+constant a = liftAp $ ConstantF a
 
 -- | Prompt for input
 prompt
@@ -489,6 +508,7 @@ runStep (MkDirF path) = runMkDir path
 runStep (DebugF t) = runDebug t
 runStep (DebugVariableF name) = get >>= runDebugVariable name
 runStep (SetF name val) = modify (Map.insert name val) $> ()
+runStep (ConstantF t) = pure t
 
 -- | Run steps interactively
 runSteps :: Steps Text Text a -> IO a
