@@ -7,6 +7,7 @@ module Stencil
   ( -- * Steps
     Steps
   , runSteps
+  , constant
   , prompt
   , promptRequired
   , promptDefault
