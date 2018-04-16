@@ -20,6 +20,7 @@ import Control.Monad.State
 import Data.Char (isSpace)
 import Data.List
 import Data.Map (Map)
+import Data.Maybe (fromMaybe, fromJust)
 import Data.Monoid
 import Data.Text (Text)
 import Options.Applicative
@@ -51,10 +52,6 @@ cmdLineApp steps = do
 
 -- | Build an optparse-applicative 'ParserInfo' that can collect all the variable required
 -- to run some 'Steps'.
---
--- @
--- main = execParser (buildParserInfo steps) >>= runStepsCmdLine
--- @
 buildParserInfo :: Steps Text Text a -> ParserInfo AppPlan
 buildParserInfo steps =
   info (buildParser steps <**> helper) fullDesc
@@ -125,12 +122,22 @@ runStepCmdLine
      )
   => StepsF Text Text a
   -> m a
-runStepCmdLine step@(PromptF name _ _) =
-  (Map.lookup name <$> get) >>=
-  maybe (runStep step) pure
-runStepCmdLine step@(PromptChoiceF name _ _ _) =
-  (Map.lookup name <$> get) >>=
-  maybe (runStep step) pure
+runStepCmdLine (PromptF name _ def) = do
+  var <- Map.lookup name <$> get
+  case def of
+    Just d -> pure $ fromMaybe d var
+    Nothing ->
+      maybe
+        (error $ "stencil error: missing value for " <> Text.unpack name)
+        pure
+        var
+runStepCmdLine (PromptChoiceF name _ choices def) = do
+  var <- Map.lookup name <$> get
+  runAp runStep $
+    maybe
+      (maybe (error $ "stencil error: missing value for " <> Text.unpack name) snd def)
+      (fromJust . flip lookup (NonEmpty.toList choices))
+      var
 runStepCmdLine (SetF var content) =
   modify (Map.insert var content)
 runStepCmdLine (FillTemplateF path template) = get >>= runFillTemplate path template
