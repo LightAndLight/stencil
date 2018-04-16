@@ -62,6 +62,7 @@ import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax as TH
 import System.Directory
 import Text.Trifecta
+import Text.Read (readMaybe)
 import Turtle.Shell (Shell, sh)
 import Turtle.Prelude (echo)
 import qualified Turtle.Shell
@@ -430,15 +431,19 @@ runStep (PromptF name pretty choices def) = do
         _ ->
           case choices of
             Nothing -> modify (Map.insert name val) $> val
-            Just choices'
-              | choices'' <- NonEmpty.toList choices'
-              , n <- read (Text.unpack val)
-              , n < length choices''
-              , content <- choices'' !! n ->
-                  modify (Map.insert name content) $> content
-              | otherwise -> do
-                  liftIO $ putStrLn "Invalid selection"
+            Just choices' ->
+              case readMaybe (Text.unpack val) of
+                Nothing -> do
+                  liftIO $ putStrLn "Please enter an integer"
                   loop
+                Just n
+                  | choices'' <- NonEmpty.toList choices'
+                  , n < length choices''
+                  , content <- choices'' !! n ->
+                      modify (Map.insert name content) $> content
+                  | otherwise -> do
+                      liftIO $ putStrLn "Invalid selection"
+                      loop
 runStep (ScriptF scr) = get >>= runScript scr
 runStep (FillTemplateF path temp) = get >>= runFillTemplate path temp
 runStep (LoadTemplateF file) = runLoadTemplate file
