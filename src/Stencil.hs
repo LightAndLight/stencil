@@ -54,6 +54,7 @@ import Data.Foldable
 import Data.Functor
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
+import Data.Maybe (isNothing)
 import Data.Semigroup
 import Data.String
 import Data.Text (Text)
@@ -235,7 +236,7 @@ type Steps var content = Ap (StepsF var content)
 prompt
   :: var -- ^ Variable name
   -> Text -- ^ Pretty name
-  -> Maybe (content) -- ^ Default - (pretty name, default)
+  -> Maybe content -- ^ Default - (pretty name, default)
   -> Steps var content content
 prompt a b c = liftAp $ PromptF a b c
 
@@ -425,13 +426,21 @@ runStep (PromptF name pretty def) = do
       (putStr "\n")
       (\val -> TIO.putStrLn $ " [default: " <> val <> "]")
       def
-    TIO.getLine
+    loop
   let
     res =
       case def of
         Just content | Text.null val -> content
         _ -> val
   modify (Map.insert name val) $> res
+  where
+    loop = do
+      val <- TIO.getLine
+      if Text.null val && isNothing def
+        then do
+          putStrLn "Please enter a value"
+          loop
+        else pure val
 runStep (PromptChoiceF name pretty choices def) = do
   liftIO $ do
     TIO.putStr $ pretty <> "?"
