@@ -17,6 +17,7 @@ import Stencil
 import Control.Applicative.Free
 import Control.Monad.IO.Class
 import Control.Monad.State
+import Data.Char (isSpace)
 import Data.List
 import Data.Map (Map)
 import Data.Monoid
@@ -44,7 +45,9 @@ data AppPlan
 cmdLineApp :: Steps Text Text a -> IO a
 cmdLineApp steps = do
   AppPlan i vs <- execParser (buildParserInfo steps)
-  if i then runSteps steps else runStepsCmdLine steps vs
+  if i
+    then runSteps steps
+    else runStepsCmdLine steps vs
 
 -- | Build an optparse-applicative 'ParserInfo' that can collect all the variable required
 -- to run some 'Steps'.
@@ -106,7 +109,11 @@ buildParser steps =
         choicesAndDefault _ (Just choices) def =
           unlines $
             [ "Choices: " ] <>
-            fmap ((++"  ") . Text.unpack) (NonEmpty.toList choices) <>
+            fmap
+              ((++"  ") .
+               (\a -> if any isSpace a then quoted a else a) .
+               Text.unpack)
+              (NonEmpty.toList choices) <>
             foldMap
               (\def' -> [ "", "Default: " <> Text.unpack def' ])
               def
