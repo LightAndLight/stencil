@@ -20,14 +20,14 @@ library
                        Stencil.CmdLine
   build-depends:       base >=4.9 && <4.11
                      , text >=1.2.2.2 && <1.3
-                     , containers >=0.5.10.2 && <0.6
+                     , containers >=0.5.7.1 && <0.6
                      , trifecta >=1.7.1.1 && <1.8
                      , parsers >=0.12.7 && <0.13
                      , free >=4.12.4 && <4.13
                      , mtl >=2.2.1 && <2.3
-                     , template-haskell >=2.12.0.0 && <2.13
+                     , template-haskell >=2.11.1.0 && <2.13
                      , th-lift-instances >=0.1.11 && <0.2
-                     , directory >=1.3.0.2 && <1.4
+                     , directory >=1.3 && <1.4
                      , optparse-applicative >=0.13.2.0 && <0.14
                      , turtle >=1.3.6 && <1.5
   hs-source-dirs:      src

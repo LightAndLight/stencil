@@ -10,7 +10,10 @@ let
                        then pkgs.haskellPackages
                        else pkgs.haskell.packages.${compiler};
 
-  drv = haskellPackages.callPackage f {};
+  drv = haskellPackages.callPackage f {
+    trifecta = haskellPackages.trifecta_1_7_1_1;
+  };
 
 in
+  
   drv
