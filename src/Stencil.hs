@@ -175,7 +175,7 @@ data StepsF var content a where
   PromptF
     :: var
     -> Text
-    -> Maybe (NonEmpty content)
+    -> Maybe (NonEmpty (Text, content))
     -> Maybe content
     -> StepsF var content content
 
@@ -228,7 +228,7 @@ type Steps var content = Ap (StepsF var content)
 prompt
   :: var -- ^ Variable name
   -> Text -- ^ Pretty name
-  -> Maybe (NonEmpty content) -- ^ Choices
+  -> Maybe (NonEmpty (Text, content)) -- ^ Choices - (pretty name, choice content)
   -> Maybe content -- ^ Default
   -> Steps var content content
 prompt a b c d = liftAp $ PromptF a b c d
@@ -252,7 +252,7 @@ promptDefault a b c = prompt a b Nothing (Just c)
 promptChoice
   :: var -- ^ Variable name
   -> Text -- ^ Pretty name
-  -> NonEmpty content -- ^ Choices
+  -> NonEmpty (Text, content) -- ^ Choices - (pretty name, choice content)
   -> Maybe content -- ^ Default
   -> Steps var content content
 promptChoice a b c = prompt a b (Just c)
@@ -421,7 +421,7 @@ runStep (PromptF name pretty choices def) = do
       def
   case choices of
     Nothing -> pure ()
-    Just choices' -> liftIO . TIO.putStr $ renderChoices choices' def
+    Just choices' -> liftIO . TIO.putStr $ renderChoices (fst <$> choices') def
   loop
   where
     loop = do
@@ -439,7 +439,7 @@ runStep (PromptF name pretty choices def) = do
                 Just n
                   | choices'' <- NonEmpty.toList choices'
                   , n < length choices''
-                  , content <- choices'' !! n ->
+                  , content <- fmap snd choices'' !! n ->
                       modify (Map.insert name content) $> content
                   | otherwise -> do
                       liftIO $ putStrLn "Invalid selection"

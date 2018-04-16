@@ -70,22 +70,25 @@ buildParser steps =
     buildVariables (Ap f b) =
       case f of
         PromptF name pretty choices def ->
-          maybe id (Map.insert name) <$>
-          (optional .
-          fmap Text.pack $
-          case choices of
-            Nothing ->
-              strOption
-              (long (Text.unpack name) <>
-                metavar (quoted $ Text.unpack pretty) <>
-                help (choicesAndDefault pretty choices def))
-            Just choices' ->
-              option
-              (choiceReader $ Text.unpack <$> choices')
-              (long (Text.unpack name) <>
-                metavar (quoted $ Text.unpack pretty) <>
-                help (choicesAndDefault pretty choices def))) <*>
-          buildVariables b
+          let
+            choicePretty = fmap fst <$> choices
+          in
+            maybe id (Map.insert name) <$>
+            (optional .
+            fmap Text.pack $
+            case choicePretty of
+              Nothing ->
+                strOption
+                (long (Text.unpack name) <>
+                  metavar (quoted $ Text.unpack pretty) <>
+                  help (choicesAndDefault pretty choicePretty def))
+              Just choices' ->
+                option
+                (choiceReader $ Text.unpack <$> choices')
+                (long (Text.unpack name) <>
+                  metavar (quoted $ Text.unpack pretty) <>
+                  help (choicesAndDefault pretty choicePretty def))) <*>
+            buildVariables b
         _ -> pure Map.empty
       where
         quoted a = "\"" <> a <> "\""
