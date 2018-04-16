@@ -183,8 +183,8 @@ data StepsF var content a where
   PromptChoiceF
     :: var
     -> Text
-    -> NonEmpty (Text, content)
-    -> Maybe (Text, content)
+    -> NonEmpty (Text, Steps var content content)
+    -> Maybe (Text, Steps var content content)
     -> StepsF var content content
 
   -- | Set a variable to a value
@@ -259,10 +259,11 @@ promptDefault a b c = prompt a b (Just c)
 promptChoice
   :: var -- ^ Variable name
   -> Text -- ^ Pretty name
-  -> NonEmpty (Text, content) -- ^ Choices - (pretty name, choice content)
-  -> Maybe (Text, content) -- ^ Default
+  -> NonEmpty (Text, Steps var content content) -- ^ Choices - (pretty name, steps which produces choice content)
+  -> Maybe (Text, Steps var content content) -- ^ Default
   -> Steps var content content
-promptChoice a b c d = liftAp $ PromptChoiceF a b c d
+promptChoice a b c d =
+  liftAp $ PromptChoiceF a b c d
 
 -- | Set a variable to a value
 set :: var -> content -> Steps var content ()
@@ -454,7 +455,9 @@ runStep (PromptChoiceF name pretty choices def) = do
     loop = do
       val <- liftIO TIO.getLine
       case snd <$> def of
-        Just content | Text.null val -> modify (Map.insert name content) $> content
+        Just content | Text.null val -> do
+          res <- runAp runStep content
+          modify (Map.insert name res) $> res
         _ ->
           case readMaybe (Text.unpack val) of
             Nothing -> do
@@ -463,8 +466,9 @@ runStep (PromptChoiceF name pretty choices def) = do
             Just n
               | choices' <- NonEmpty.toList choices
               , n < length choices'
-              , content <- fmap snd choices' !! n ->
-                  modify (Map.insert name content) $> content
+              , content <- fmap snd choices' !! n -> do
+                  res <- runAp runStep content
+                  modify (Map.insert name res) $> res
               | otherwise -> do
                   liftIO $ putStrLn "Invalid selection"
                   loop

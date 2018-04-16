@@ -86,10 +86,10 @@ buildParser steps =
             (optional .
              fmap Text.pack $
              option
-               (choiceReader $ Text.unpack . snd <$> choices)
+               (choiceReader $ Text.unpack . fst <$> choices)
                (long (Text.unpack name) <>
                   metavar (quoted $ Text.unpack pretty) <>
-                  help (choicesAndDefault pretty (Just choicePretty) (snd <$> def)))) <*>
+                  help (choicesAndDefault pretty (Just choicePretty) (fst <$> def)))) <*>
             buildVariables b
         _ -> pure Map.empty
       where
