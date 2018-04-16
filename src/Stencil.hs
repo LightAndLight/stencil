@@ -426,9 +426,12 @@ runStep (PromptF name pretty def) = do
       (\val -> TIO.putStrLn $ " [default: " <> val <> "]")
       def
     TIO.getLine
-  case def of
-    Just content | Text.null val -> modify (Map.insert name content) $> content
-    _ -> pure val
+  let
+    res =
+      case def of
+        Just content | Text.null val -> content
+        _ -> val
+  modify (Map.insert name val) $> res
 runStep (PromptChoiceF name pretty choices def) = do
   liftIO $ do
     TIO.putStr $ pretty <> "?"
