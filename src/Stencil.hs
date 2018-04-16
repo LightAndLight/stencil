@@ -371,7 +371,11 @@ runFillTemplate path temp vals = do
       (error $ "stencil error: temp could not be completely filled: " <> show vals)
       pure
       (consolidate $ fill vals temp)
-  liftIO $ TIO.writeFile (Text.unpack path') temp'
+  let path'' = Text.unpack path'
+  liftIO $ do
+    fe <- doesFileExist path''
+    de <- doesDirectoryExist path''
+    unless (fe || de) $ TIO.writeFile path'' temp'
   pure temp'
 
 -- | How to run 'LoadTemplateF' interactively
@@ -384,22 +388,27 @@ runLoadTemplate file = do
 
 -- | How to run 'CreateFileF' interactively
 runCreateFile :: MonadIO m => Text -> Text -> m ()
-runCreateFile file content = liftIO (TIO.writeFile (Text.unpack file) content) $> ()
+runCreateFile file content =
+  liftIO $ do
+    let file' = Text.unpack file
+    fe <- doesFileExist file'
+    de <- doesDirectoryExist file'
+    unless (fe || de) $ TIO.writeFile file' content
 
 -- | How to run 'MkDirF' interactively
 runMkDir :: MonadIO m => Text -> m ()
-runMkDir path = liftIO (createDirectoryIfMissing True $ Text.unpack path) $> ()
+runMkDir path = liftIO (createDirectoryIfMissing True $ Text.unpack path)
 
 -- | How to run 'DebugF' interactively
 runDebug :: MonadIO m => Text -> m ()
-runDebug t = liftIO (TIO.putStrLn $ "debug: " <> t) $> ()
+runDebug t = liftIO (TIO.putStrLn $ "debug: " <> t)
 
 -- | How to run 'DebugVariableF' interactively
 runDebugVariable :: MonadIO m => Text -> Map Text Text -> m ()
 runDebugVariable name vars =
   case Map.lookup name vars of
     Nothing -> error $ "stencil error: variable '" <> Text.unpack name <> "' not set"
-    Just value -> liftIO (TIO.putStrLn $ "debug variable: " <> value) $> ()
+    Just value -> liftIO (TIO.putStrLn $ "debug variable: " <> value)
 
 -- | How to run 'ScriptF' interactively
 runScript
