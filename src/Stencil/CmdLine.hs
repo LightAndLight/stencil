@@ -18,6 +18,7 @@ import Control.Applicative.Free
 import Control.Monad.IO.Class
 import Control.Monad.State
 import Data.Char (isSpace)
+import Data.Functor (($>))
 import Data.List
 import Data.Map (Map)
 import Data.Maybe (fromMaybe, fromJust)
@@ -133,11 +134,12 @@ runStepCmdLine (PromptF name _ def) = do
         var
 runStepCmdLine (PromptChoiceF name _ choices def) = do
   var <- Map.lookup name <$> get
-  runAp runStep $
+  res <- runAp runStep $
     maybe
       (maybe (error $ "stencil error: missing value for " <> Text.unpack name) snd def)
       (fromJust . flip lookup (NonEmpty.toList choices))
       var
+  modify (Map.insert name res) $> res
 runStepCmdLine (SetF var content) =
   modify (Map.insert var content)
 runStepCmdLine (FillTemplateF path template) = get >>= runFillTemplate path template
