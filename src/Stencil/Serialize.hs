@@ -29,7 +29,7 @@ toValue = toJSON . runAp_ go
     go step =
       pure $
       case step of
-        ConstantF t -> toJSON t
+        ConstantF t -> Object [("constant", toJSON t)]
         PromptF name prettyName def ->
           Object
           [ ( "prompt"
