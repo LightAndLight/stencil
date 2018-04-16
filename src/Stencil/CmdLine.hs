@@ -148,6 +148,7 @@ runStepCmdLine (MkDirF path) = runMkDir path
 runStepCmdLine (DebugF t) = runDebug t
 runStepCmdLine (DebugVariableF name) = get >>= runDebugVariable name
 runStepCmdLine (ScriptF scr) = get >>= runScript scr
+runStepCmdLine (ConstantF t) = pure t
 
 -- | Run steps non-interactively given an initial state
 runStepsCmdLine :: MonadIO m => Steps Text Text a -> Map Text Text -> m a
