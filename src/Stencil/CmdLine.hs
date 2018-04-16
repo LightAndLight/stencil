@@ -126,7 +126,7 @@ runStepCmdLine
 runStepCmdLine (PromptF name _ def) = do
   var <- Map.lookup name <$> get
   case def of
-    Just d -> pure $ fromMaybe d var
+    Just d -> maybe (modify (Map.insert name d) $> d) pure var
     Nothing ->
       maybe
         (error $ "stencil error: missing value for " <> Text.unpack name)
@@ -140,15 +140,14 @@ runStepCmdLine (PromptChoiceF name _ choices def) = do
       (fromJust . flip lookup (NonEmpty.toList choices))
       var
   modify (Map.insert name res) $> res
-runStepCmdLine (SetF var content) =
-  modify (Map.insert var content)
-runStepCmdLine (FillTemplateF path template) = get >>= runFillTemplate path template
+runStepCmdLine (SetF var content) = modify (Map.insert var content)
+runStepCmdLine (FillTemplateF path temp) = get >>= runFillTemplate path temp
 runStepCmdLine (LoadTemplateF file) = runLoadTemplate file
 runStepCmdLine (CreateFileF file content) = runCreateFile file content
 runStepCmdLine (MkDirF path) = runMkDir path
 runStepCmdLine (DebugF t) = runDebug t
 runStepCmdLine (DebugVariableF name) = get >>= runDebugVariable name
-runStepCmdLine (ScriptF script) = get >>= runScript script
+runStepCmdLine (ScriptF scr) = get >>= runScript scr
 
 -- | Run steps non-interactively given an initial state
 runStepsCmdLine :: MonadIO m => Steps Text Text a -> Map Text Text -> m a
