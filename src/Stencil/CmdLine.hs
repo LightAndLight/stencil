@@ -69,25 +69,27 @@ buildParser steps =
     buildVariables (Pure _) = pure Map.empty
     buildVariables (Ap f b) =
       case f of
-        PromptF name pretty choices def ->
+        PromptF name pretty def ->
+          maybe id (Map.insert name) <$>
+          (optional .
+           fmap Text.pack $
+           strOption
+           (long (Text.unpack name) <>
+             metavar (quoted $ Text.unpack pretty) <>
+             help (choicesAndDefault pretty Nothing def))) <*>
+          buildVariables b
+        PromptChoiceF name pretty choices def ->
           let
-            choicePretty = fmap fst <$> choices
+            choicePretty = fst <$> choices
           in
             maybe id (Map.insert name) <$>
             (optional .
-            fmap Text.pack $
-            case choicePretty of
-              Nothing ->
-                strOption
-                (long (Text.unpack name) <>
+             fmap Text.pack $
+             option
+               (choiceReader $ Text.unpack . snd <$> choices)
+               (long (Text.unpack name) <>
                   metavar (quoted $ Text.unpack pretty) <>
-                  help (choicesAndDefault pretty choicePretty def))
-              Just choices' ->
-                option
-                (choiceReader $ Text.unpack <$> choices')
-                (long (Text.unpack name) <>
-                  metavar (quoted $ Text.unpack pretty) <>
-                  help (choicesAndDefault pretty choicePretty def))) <*>
+                  help (choicesAndDefault pretty (Just choicePretty) (snd <$> def)))) <*>
             buildVariables b
         _ -> pure Map.empty
       where
@@ -116,7 +118,10 @@ runStepCmdLine
      )
   => StepsF Text Text a
   -> m a
-runStepCmdLine step@(PromptF name _ _ _) =
+runStepCmdLine step@(PromptF name _ _) =
+  (Map.lookup name <$> get) >>=
+  maybe (runStep step) pure
+runStepCmdLine step@(PromptChoiceF name _ _ _) =
   (Map.lookup name <$> get) >>=
   maybe (runStep step) pure
 runStepCmdLine (SetF var content) =

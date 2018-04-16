@@ -175,8 +175,15 @@ data StepsF var content a where
   PromptF
     :: var
     -> Text
-    -> Maybe (NonEmpty (Text, content))
     -> Maybe content
+    -> StepsF var content content
+
+  -- | Prompt for input, selecting choices
+  PromptChoiceF
+    :: var
+    -> Text
+    -> NonEmpty (Text, content)
+    -> Maybe (Text, content)
     -> StepsF var content content
 
   -- | Set a variable to a value
@@ -228,17 +235,16 @@ type Steps var content = Ap (StepsF var content)
 prompt
   :: var -- ^ Variable name
   -> Text -- ^ Pretty name
-  -> Maybe (NonEmpty (Text, content)) -- ^ Choices - (pretty name, choice content)
-  -> Maybe content -- ^ Default
+  -> Maybe (content) -- ^ Default - (pretty name, default)
   -> Steps var content content
-prompt a b c d = liftAp $ PromptF a b c d
+prompt a b c = liftAp $ PromptF a b c
 
 -- | Prompt for required input
 promptRequired
   :: var -- ^ Variable name
   -> Text -- ^ Pretty name
   -> Steps var content content
-promptRequired a b = prompt a b Nothing Nothing
+promptRequired a b = prompt a b Nothing
 
 -- | Prompt for input with a default
 promptDefault
@@ -246,16 +252,16 @@ promptDefault
   -> Text -- ^ Pretty name
   -> content -- ^ Default
   -> Steps var content content
-promptDefault a b c = prompt a b Nothing (Just c)
+promptDefault a b c = prompt a b (Just c)
 
 -- | Prompt for input with choices
 promptChoice
   :: var -- ^ Variable name
   -> Text -- ^ Pretty name
   -> NonEmpty (Text, content) -- ^ Choices - (pretty name, choice content)
-  -> Maybe content -- ^ Default
+  -> Maybe (Text, content) -- ^ Default
   -> Steps var content content
-promptChoice a b c = prompt a b (Just c)
+promptChoice a b c d = liftAp $ PromptChoiceF a b c d
 
 -- | Set a variable to a value
 set :: var -> content -> Steps var content ()
@@ -412,38 +418,44 @@ runStep
   :: (MonadState (Map Text Text) m, MonadIO m)
   => StepsF Text Text a
   -> m a
-runStep (PromptF name pretty choices def) = do
-  liftIO $ do
+runStep (PromptF name pretty def) = do
+  val <- liftIO $ do
     TIO.putStr $ pretty <> "?"
     maybe
       (putStr "\n")
       (\val -> TIO.putStrLn $ " [default: " <> val <> "]")
       def
-  case choices of
-    Nothing -> pure ()
-    Just choices' -> liftIO . TIO.putStr $ renderChoices (fst <$> choices') def
+    TIO.getLine
+  case def of
+    Just content | Text.null val -> modify (Map.insert name content) $> content
+    _ -> pure val
+runStep (PromptChoiceF name pretty choices def) = do
+  liftIO $ do
+    TIO.putStr $ pretty <> "?"
+    maybe
+      (putStr "\n")
+      (\val -> TIO.putStrLn $ " [default: " <> fst val <> "]")
+      def
+    liftIO . TIO.putStr $ renderChoices (fst <$> choices) (fst <$> def)
   loop
   where
     loop = do
       val <- liftIO TIO.getLine
-      case def of
+      case snd <$> def of
         Just content | Text.null val -> modify (Map.insert name content) $> content
         _ ->
-          case choices of
-            Nothing -> modify (Map.insert name val) $> val
-            Just choices' ->
-              case readMaybe (Text.unpack val) of
-                Nothing -> do
-                  liftIO $ putStrLn "Please enter an integer"
+          case readMaybe (Text.unpack val) of
+            Nothing -> do
+              liftIO $ putStrLn "Please enter an integer"
+              loop
+            Just n
+              | choices' <- NonEmpty.toList choices
+              , n < length choices'
+              , content <- fmap snd choices' !! n ->
+                  modify (Map.insert name content) $> content
+              | otherwise -> do
+                  liftIO $ putStrLn "Invalid selection"
                   loop
-                Just n
-                  | choices'' <- NonEmpty.toList choices'
-                  , n < length choices''
-                  , content <- fmap snd choices'' !! n ->
-                      modify (Map.insert name content) $> content
-                  | otherwise -> do
-                      liftIO $ putStrLn "Invalid selection"
-                      loop
 runStep (ScriptF scr) = get >>= runScript scr
 runStep (FillTemplateF path temp) = get >>= runFillTemplate path temp
 runStep (LoadTemplateF file) = runLoadTemplate file
