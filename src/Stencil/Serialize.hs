@@ -207,7 +207,7 @@ fromValue value = do
         PromptChoice o ->
           fmap SomeStepsText $ do
             n <- o .: "name"
-            pn <- o .: "pretty-name"
+            pn <- o .: "pretty_name"
             csObj :: Object <- o .: "choices"
             case toList csObj :: [(Text, Value)] of
               [] -> fail "expected non-empty obect"
