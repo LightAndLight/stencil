@@ -8,10 +8,11 @@ import Control.Applicative ((<|>))
 import Control.Applicative.Free (Ap(..), runAp_)
 import Control.Monad ((<=<))
 import Data.Text (Text)
-import GHC.Exts (fromList)
+import GHC.Exts (fromList, toList)
 import Data.Semigroup ((<>))
 import qualified Data.Aeson.Encode.Pretty as Json (encodePretty)
 import Data.ByteString.Lazy (toStrict)
+import Data.List.NonEmpty (NonEmpty(..))
 import Data.Yaml
   ((.:), (.:?), Object, Parser, Value(..), ToJSON, toJSON, parseJSON,
    parseJSONList, decodeEither, parseEither)
@@ -205,22 +206,19 @@ fromValue value = do
           PromptF <$> o .: "name" <*> o .: "pretty_name" <*> o .:? "default"
         PromptChoice o ->
           fmap SomeStepsText $ do
-            cs <-
-              o .: "choices" >>=
-              traverse
-                (\case
-                  Object [(name, value)] ->
-                    (,) name <$> fromValueText value
-                  _ -> fail "choice was not a single key: value pair")
-            def <- o .:? "default"
-            PromptChoiceF <$>
-              o .: "name" <*>
-              o .: "pretty-name" <*>
-              pure cs <*>
-              maybe
-                (pure Nothing)
-                (\(a, b) -> Just . (,) a <$> fromValueText b)
-                def
+            n <- o .: "name"
+            pn <- o .: "pretty-name"
+            csObj :: Object <- o .: "choices"
+            case toList csObj :: [(Text, Value)] of
+              [] -> fail "expected non-empty obect"
+              c:cs -> do
+                cs' <- traverse (\(name, value) -> (,) name <$> fromValueText value) (c :| cs)
+                def <- o .:? "default"
+                PromptChoiceF n pn cs' <$>
+                  maybe
+                    (pure Nothing)
+                    (\(a, b) -> Just . (,) a <$> fromValueText b)
+                    def
         Set o ->
           fmap SomeStepsUnit $ SetF <$> o .: "name" <*> o .: "value"
         Script o ->
