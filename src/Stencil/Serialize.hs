@@ -143,6 +143,19 @@ parseStencilYaml = parseEither fromValue <=< decodeEither . encodeUtf8
 parseStencilJson :: Text -> Either String (Steps Text Text ())
 parseStencilJson = parseEither fromValue <=< decodeEither . encodeUtf8
 
+data CommandObject
+  = Constant Text
+  | Prompt Object
+  | PromptChoice Object
+  | Set Object
+  | Script Object
+  | FillTemplate Object
+  | LoadTemplate Object
+  | CreateFile Object
+  | MakeDirectory Object
+  | Debug Object
+  | DebugVariable Object
+
 fromValue :: Value -> Parser (Steps Text Text ())
 fromValue value = do
   values :: [Object] <- parseJSONList value
@@ -171,61 +184,69 @@ fromValue value = do
       toApText steps
 
     go :: Object -> Parser (SomeSteps Text Text)
-    go v =
-      fmap SomeStepsText (ConstantF <$> v .: "constant") <|>
-      fmap SomeStepsText (do
-                    p <- v .: "prompt"
-                    PromptF <$> p .: "name" <*> p .: "pretty_name" <*> p .:? "default") <|>
-      fmap SomeStepsText (do
-                    p <- v .: "prompt_choice"
-                    cs <-
-                      p .: "choices" >>=
-                      traverse
-                        (\case
-                          Object [(name, value)] ->
-                            (,) name <$> fromValueText value
-                          _ -> fail "choice was not a single key: value pair")
-                    def <- p .:? "default"
-                    PromptChoiceF <$>
-                      p .: "name" <*>
-                      p .: "pretty-name" <*>
-                      pure cs <*>
-                      maybe
-                        (pure Nothing)
-                        (\(a, b) -> Just . (,) a <$> fromValueText b)
-                        def) <|>
-      fmap SomeStepsUnit (do
-                    p <- v .: "set"
-                    SetF <$> p .: "name" <*> p .: "value") <|>
-      fmap SomeStepsUnit (do
-                    p <- v .: "script"
-                    c <- p .: "content"
-                    case parseString parseTemplate mempty c of
-                      Failure err -> fail $ show err
-                      Success a -> pure $ ScriptF a) <|>
-      fmap SomeStepsText (do
-                    p <- v .: "fill_template"
-                    c1 <- p .: "path"
-                    c2 <- p .: "content"
-                    c1' <- case parseString parseTemplate mempty c1 of
-                      Failure err -> fail $ show err
-                      Success a -> pure a
-                    c2' <- case parseString parseTemplate mempty c2 of
-                      Failure err -> fail $ show err
-                      Success a -> pure a
-                    pure $ FillTemplateF c1' c2') <|>
-      fmap SomeStepsTemplate (do
-                    p <- v .: "load_template"
-                    LoadTemplateF <$> p .: "path") <|>
-      fmap SomeStepsUnit (do
-                    p <- v .: "create_file"
-                    CreateFileF <$> p .: "path" <*> p .: "content") <|>
-      fmap SomeStepsUnit (do
-                    p <- v .: "make_directory"
-                    MkDirF <$> p .: "path") <|>
-      fmap SomeStepsUnit (do
-                    p <- v .: "debug"
-                    DebugF <$> p .: "message") <|>
-      fmap SomeStepsUnit (do
-                    p <- v .: "debug_variable"
-                    DebugVariableF <$> p .: "variable")
+    go v = do
+      p <-
+        Constant <$> v .: "constant" <|>
+        Prompt <$> v .: "prompt" <|>
+        PromptChoice <$> v .: "prompt_choice" <|>
+        Set <$> v .: "set" <|>
+        Script <$> v .: "script" <|>
+        FillTemplate <$> v .: "fill_template" <|>
+        LoadTemplate <$> v .: "load_template" <|>
+        CreateFile <$> v .: "create_file" <|>
+        MakeDirectory <$> v .: "make_directory" <|>
+        Debug <$> v .: "debug" <|>
+        DebugVariable <$> v .: "debug_variable" <|>
+        fail "invalid command"
+      case p of
+        Constant o -> pure $ SomeStepsText (ConstantF o)
+        Prompt o ->
+          fmap SomeStepsText $
+          PromptF <$> o .: "name" <*> o .: "pretty_name" <*> o .:? "default"
+        PromptChoice o ->
+          fmap SomeStepsText $ do
+            cs <-
+              o .: "choices" >>=
+              traverse
+                (\case
+                  Object [(name, value)] ->
+                    (,) name <$> fromValueText value
+                  _ -> fail "choice was not a single key: value pair")
+            def <- o .:? "default"
+            PromptChoiceF <$>
+              o .: "name" <*>
+              o .: "pretty-name" <*>
+              pure cs <*>
+              maybe
+                (pure Nothing)
+                (\(a, b) -> Just . (,) a <$> fromValueText b)
+                def
+        Set o ->
+          fmap SomeStepsUnit $ SetF <$> o .: "name" <*> o .: "value"
+        Script o ->
+          fmap SomeStepsUnit $ do
+            c <- o .: "content"
+            case parseString parseTemplate mempty c of
+              Failure err -> fail $ show err
+              Success a -> pure $ ScriptF a
+        FillTemplate o ->
+          fmap SomeStepsText $ do
+            c1 <- o .: "path"
+            c2 <- o .: "content"
+            c1' <- case parseString parseTemplate mempty c1 of
+              Failure err -> fail $ show err
+              Success a -> pure a
+            c2' <- case parseString parseTemplate mempty c2 of
+              Failure err -> fail $ show err
+              Success a -> pure a
+            pure $ FillTemplateF c1' c2'
+        LoadTemplate o ->
+          fmap SomeStepsTemplate $ LoadTemplateF <$> o .: "path"
+        CreateFile o ->
+          fmap SomeStepsUnit $ CreateFileF <$> o .: "path" <*> o .: "content"
+        MakeDirectory o ->
+          fmap SomeStepsUnit $ MkDirF <$> o .: "path"
+        Debug o ->
+          fmap SomeStepsUnit $ DebugF <$> o .: "message"
+        DebugVariable o ->
+          fmap SomeStepsUnit $ DebugVariableF <$> o .: "variable"
