@@ -217,7 +217,9 @@ fromValue value = do
                 PromptChoiceF n pn cs' <$>
                   maybe
                     (pure Nothing)
-                    (\(a, b) -> Just . (,) a <$> fromValueText b)
+                    (\case
+                        Object [(a, b)] -> Just . (,) a <$> fromValueText b
+                        _ -> fail "expected single key: value pair")
                     def
         Set o ->
           fmap SomeStepsUnit $ SetF <$> o .: "name" <*> o .: "value"
