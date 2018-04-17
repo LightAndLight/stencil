@@ -1,20 +1,27 @@
 {-# language GADTs #-}
 {-# language OverloadedLists, OverloadedStrings #-}
+{-# language ScopedTypeVariables #-}
+{-# language LambdaCase #-}
 module Stencil.Serialize where
 
+import Control.Applicative ((<|>))
 import Control.Applicative.Free (Ap(..), runAp_)
+import Control.Monad ((<=<))
 import Data.Text (Text)
 import GHC.Exts (fromList)
 import Data.Semigroup ((<>))
 import qualified Data.Aeson.Encode.Pretty as Json (encodePretty)
 import Data.ByteString.Lazy (toStrict)
-import Data.Yaml (Value(..), ToJSON, toJSON)
+import Data.Yaml
+  ((.:), (.:?), Object, Parser, Value(..), ToJSON, toJSON, parseJSON,
+   parseJSONList, decodeEither, parseEither)
 import qualified Data.Yaml.Pretty as Yaml (encodePretty, defConfig)
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Text.Trifecta (Result(..), parseString)
 
 import qualified Data.List.NonEmpty as NonEmpty
 
-import Stencil (Steps, StepsF(..), renderTemplate)
+import Stencil (Steps, StepsF(..), Template, parseTemplate, renderTemplate)
 
 printStencilYaml :: Steps Text Text a -> Text
 printStencilYaml = decodeUtf8 . Yaml.encodePretty Yaml.defConfig . toValue
@@ -124,3 +131,101 @@ toValue = toJSON . runAp_ go
               ]
             )
           ]
+
+data SomeSteps var content
+  = SomeStepsUnit (StepsF var content ())
+  | SomeStepsText (StepsF var content Text)
+  | SomeStepsTemplate (StepsF var content (Template var content))
+
+parseStencilYaml :: Text -> Either String (Steps Text Text ())
+parseStencilYaml = parseEither fromValue <=< decodeEither . encodeUtf8
+
+parseStencilJson :: Text -> Either String (Steps Text Text ())
+parseStencilJson = parseEither fromValue <=< decodeEither . encodeUtf8
+
+fromValue :: Value -> Parser (Steps Text Text ())
+fromValue value = do
+  values :: [Object] <- parseJSONList value
+  steps <- traverse go values
+  pure $ toAp steps
+  where
+    toAp :: [SomeSteps Text Text] -> Steps Text Text ()
+    toAp [] = pure ()
+    toAp (SomeStepsUnit step : rest) = Ap step (const <$> toAp rest)
+    toAp (SomeStepsText step : rest) = Ap step (const <$> toAp rest)
+    toAp (SomeStepsTemplate step : rest) = Ap step (const <$> toAp rest)
+
+    toApText :: [SomeSteps Text Text] -> Parser (Steps Text Text Text)
+    toApText [] = fail "steps do not yield textual value - found empty"
+    toApText [SomeStepsText step] = pure $ Ap step (Pure id)
+    toApText (SomeStepsText step : rest) = Ap step . fmap const <$> toApText rest
+    toApText (SomeStepsUnit step : rest) =
+      fail "steps do not yield textual value - found unit"
+    toApText (SomeStepsTemplate step : rest) =
+      fail "steps do not yield textual value - found template"
+
+    fromValueText :: Value -> Parser (Steps Text Text Text)
+    fromValueText value = do
+      values :: [Object] <- parseJSONList value
+      steps <- traverse go values
+      toApText steps
+
+    go :: Object -> Parser (SomeSteps Text Text)
+    go v =
+      fmap SomeStepsText (ConstantF <$> v .: "constant") <|>
+      fmap SomeStepsText (do
+                    p <- v .: "prompt"
+                    PromptF <$> p .: "name" <*> p .: "pretty_name" <*> p .:? "default") <|>
+      fmap SomeStepsText (do
+                    p <- v .: "prompt_choice"
+                    cs <-
+                      p .: "choices" >>=
+                      traverse
+                        (\case
+                          Object [(name, value)] ->
+                            (,) name <$> fromValueText value
+                          _ -> fail "choice was not a single key: value pair")
+                    def <- p .:? "default"
+                    PromptChoiceF <$>
+                      p .: "name" <*>
+                      p .: "pretty-name" <*>
+                      pure cs <*>
+                      maybe
+                        (pure Nothing)
+                        (\(a, b) -> Just . (,) a <$> fromValueText b)
+                        def) <|>
+      fmap SomeStepsUnit (do
+                    p <- v .: "set"
+                    SetF <$> p .: "name" <*> p .: "value") <|>
+      fmap SomeStepsUnit (do
+                    p <- v .: "script"
+                    c <- p .: "content"
+                    case parseString parseTemplate mempty c of
+                      Failure err -> fail $ show err
+                      Success a -> pure $ ScriptF a) <|>
+      fmap SomeStepsText (do
+                    p <- v .: "fill_template"
+                    c1 <- p .: "path"
+                    c2 <- p .: "content"
+                    c1' <- case parseString parseTemplate mempty c1 of
+                      Failure err -> fail $ show err
+                      Success a -> pure a
+                    c2' <- case parseString parseTemplate mempty c2 of
+                      Failure err -> fail $ show err
+                      Success a -> pure a
+                    pure $ FillTemplateF c1' c2') <|>
+      fmap SomeStepsTemplate (do
+                    p <- v .: "load_template"
+                    LoadTemplateF <$> p .: "path") <|>
+      fmap SomeStepsUnit (do
+                    p <- v .: "create_file"
+                    CreateFileF <$> p .: "path" <*> p .: "content") <|>
+      fmap SomeStepsUnit (do
+                    p <- v .: "make_directory"
+                    MkDirF <$> p .: "path") <|>
+      fmap SomeStepsUnit (do
+                    p <- v .: "debug"
+                    DebugF <$> p .: "message") <|>
+      fmap SomeStepsUnit (do
+                    p <- v .: "debug_variable"
+                    DebugVariableF <$> p .: "variable")
