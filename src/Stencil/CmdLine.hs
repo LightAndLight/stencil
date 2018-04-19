@@ -92,7 +92,7 @@ buildParser steps =
                   metavar (quoted $ Text.unpack pretty) <>
                   help (choicesAndDefault pretty (Just choicePretty) (fst <$> def)))) <*>
             buildVariables b
-        _ -> pure Map.empty
+        _ -> buildVariables b
       where
         quoted a = "\"" <> a <> "\""
 
