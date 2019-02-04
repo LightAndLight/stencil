@@ -112,54 +112,64 @@ consolidateAppliedTemplate (Value b) = Just b
 
 data StepsF var content a where
   -- | Prompt for input
+  --
+  -- @PromptF (Variable name) (Pretty name) (Choices) (Default)@
   PromptF
-    :: var -- ^ Variable name
-    -> Text -- ^ Pretty name
-    -> Maybe (NonEmpty content) -- ^ Choices
-    -> Maybe content -- ^ Default
+    :: var
+    -> Text
+    -> Maybe (NonEmpty content)
+    -> Maybe content
     -> StepsF var content content
 
   -- | Set a variable to a value
   SetF
-    :: var -- ^ Variable name
+    :: var
     -> content
     -> StepsF var content ()
 
   -- | Run a shell script
   ScriptF
-    :: AppliedTemplate var content (Shell a) -- | The turtle shell to run
+    :: AppliedTemplate var content (Shell a)
     -> StepsF var content ()
 
   -- | Instantiate a template and write it to a file
+  --
+  -- @FillTemplateF (Output path) (Template to instantiate)@
   FillTemplateF
-    :: Template var Text -- ^ Output path
-    -> Template var content -- ^ Template to instantiate
+    :: Template var Text
+    -> Template var content
     -> StepsF var content content
 
-  -- ^ Load a template from a file
+  -- | Load a template from a file
+  --
+  -- @LoadTemplateF (Path to template)@
   LoadTemplateF
-    :: Text -- ^ Path to template
+    :: Text
     -> StepsF var content (Template var content)
 
-  -- ^ Create a file with some content
+  -- | Create a file with some content
+  -- 
+  -- @CreateFileF (Path to file) (Content)@
   CreateFileF 
-    :: Text -- ^ Path to file
-    -> Text -- ^ Content
+    :: Text
+    -> Text
     -> StepsF var content ()
 
-  -- ^ Create a directory
+  -- | Create a directory
+  --
+  -- @MkDirF (Path)@
   MkDirF 
-    :: Text -- ^ Path
+    :: Text
     -> StepsF var content ()
 
-  -- ^ Print a message
+  -- | Print a message
   DebugF 
-    :: Text -- ^ Message to print
+    :: Text
     -> StepsF var content ()
 
-  -- ^ Print the value of a variable
+  -- | Print the value of a variable
   DebugVariableF 
-    :: var -- ^ Variable to inspect
+    :: var
     -> StepsF var content ()
 
 type Steps var content = Ap (StepsF var content)

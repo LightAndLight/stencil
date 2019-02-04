@@ -1,4 +1,4 @@
-{ nixpkgs ? import <nixpkgs> {}, compiler ? "ghc821" }:
+{ nixpkgs ? import <nixpkgs> {}, compiler ? "default" }:
 
 let
 
@@ -12,4 +12,4 @@ let
 
 in
 
-  if pkgs.lib.inNixShell then drv.env else drv
+  drv.env
